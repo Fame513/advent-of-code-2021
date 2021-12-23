@@ -3,26 +3,28 @@ import {getInput, getTestFunction, sendAnswer} from './helper';
 const DAY = 22;
 
 type Input = {action: 'on' | 'off', box: Box}
+type Axis = 'x' | 'y' | 'z'
 
 class Box {
-  private readonly x: [number, number];
-  private readonly y: [number, number];
-  private readonly z: [number, number];
-
-  constructor(x: [number, number],
-              y: [number, number],
-              z: [number, number]) {
-    this.x = x;
-    this.y = y;
-    this.z = z;
+  constructor( private readonly x: number[],
+               private readonly y: number[],
+               private readonly z: number[]) {
   }
 
-  static checked(x: [number, number],
-                y: [number, number],
-                z: [number, number]): Box | undefined {
-    if (x[0] <= x[1] && y[0] <= y[1] && z[0] <= z[1]) {
-      return new Box(x, y, z);
+  clone(): Box {
+    return new Box(this.x.slice(), this.y.slice(), this.z.slice())
+  }
+
+  shiftSide(axis: Axis, side: 0 | 1, value: number): Box | undefined {
+    if ((side === 0 && this[axis][1] < value) || (side === 1 && this[axis][0] > value)) {
+      return ;
     }
+    if ((side === 0 && this[axis][0] >= value) || (side === 1 && this[axis][1] <= value)) {
+      return this;
+    }
+    const box = this.clone();
+    box[axis][side] = value;
+    return box;
   }
 
   size() {
@@ -31,32 +33,10 @@ class Box {
         * (Math.abs(this.z[1] - this.z[0]) + 1);
   }
 
-  split(axis: 'x+' | 'y+' | 'z+' | 'x-' | 'y-' | 'z-', value: number): {part: Box | undefined, left: Box | undefined} {
-    switch (axis) {
-      case 'x+': return {
-        part: Box.checked([Math.max(value + 1, this.x[0]), this.x[1]], [this.y[0], this.y[1]], [this.z[0], this.z[1]]),
-        left: Box.checked([this.x[0], Math.min(value, this.x[1])], [this.y[0], this.y[1]], [this.z[0], this.z[1]])
-      }
-      case 'x-': return {
-        part: Box.checked([this.x[0], Math.min(value - 1, this.x[1])], [this.y[0], this.y[1]], [this.z[0], this.z[1]]),
-        left: Box.checked([Math.max(value, this.x[0]), this.x[1]], [this.y[0], this.y[1]], [this.z[0], this.z[1]])
-      }
-      case 'y+': return {
-        part: Box.checked([this.x[0], this.x[1]], [Math.max(value + 1, this.y[0]), this.y[1]], [this.z[0], this.z[1]]),
-        left: Box.checked([this.x[0], this.x[1]], [this.y[0], Math.min(this.y[1], value)], [this.z[0], this.z[1]])
-      }
-      case 'y-': return {
-        part: Box.checked([this.x[0], this.x[1]], [this.y[0], Math.min(value - 1, this.y[1])], [this.z[0], this.z[1]]),
-        left: Box.checked([this.x[0], this.x[1]], [Math.max(value, this.y[0]), this.y[1]], [this.z[0], this.z[1]])
-      }
-      case 'z+': return {
-        part: Box.checked([this.x[0], this.x[1]], [this.y[0], this.y[1]], [Math.max(value + 1, this.z[0]), this.z[1]]),
-        left: Box.checked([this.x[0], this.x[1]], [this.y[0], this.y[1]], [this.z[0], Math.min(this.z[1], value)])
-      }
-      case 'z-': return {
-        part: Box.checked([this.x[0], this.x[1]], [this.y[0], this.y[1]], [this.z[0], Math.min(value - 1, this.z[1])]),
-        left: Box.checked([this.x[0], this.x[1]], [this.y[0], this.y[1]], [Math.max(value, this.z[0]), this.z[1]])
-      }
+  split(axis: Axis, side: 1 | 0, value: number): {part: Box | undefined, left: Box | undefined} {
+    return {
+      part: this.shiftSide(axis, side ? 0 : 1, value + (side ? 1 : -1)),
+      left: this.shiftSide(axis, side, value)
     }
   }
 
@@ -64,15 +44,11 @@ class Box {
     let left: Box = this;
     let part: Box;
     const result = []
-    const axis = ['x-', 'x+', 'y-', 'y+', 'z-', 'z+'];
-    const values = [box.x[0], box.x[1], box.y[0], box.y[1], box.z[0], box.z[1]];
-    for(let i = 0; i < axis.length; i++) {
-      if (!left) {
-        break;
-      }
-      ({left, part} = left.split(axis[i] as any, values[i]));
-      if (part) {
-        result.push(part)
+    br: for (const axis of ['x', 'y' ,'z']) {
+      for (const side of [0, 1]) {
+        ({left, part} = left.split(axis as Axis, side as 0 | 1, box[axis][side]));
+        if (part) result.push(part)
+        if (!left) break br;
       }
     }
     return result;
@@ -96,24 +72,16 @@ function calculatePart1(input: Input[]): number {
 
 function calculatePart2(input: Input[]): number {
   let boxes: Box[] = [];
-  let i = 1;
   for (const box of input) {
-    console.log(`${i++}/${input.length}`)
     const newBoxes = []
     for (let existedBox of boxes) {
       newBoxes.push(...existedBox.sub(box.box))
     }
-    if (box.action === 'on') {
-      newBoxes.push(box.box)
-    }
+    if (box.action === 'on') newBoxes.push(box.box)
     boxes = newBoxes;
   }
 
-  let result = 0;
-  for (const box of boxes) {
-    result += box.size();
-  }
-  return result;
+  return boxes.reduce((buf, box) => buf + box.size(), 0);
 }
 
 
